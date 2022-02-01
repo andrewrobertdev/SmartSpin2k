@@ -193,8 +193,6 @@ class SpinBLEClient {
   int cscCumulativeCrankRev  = 0;
   int cscLastCrankEvtTime    = 0;
 
-  BLERemoteCharacteristic *pRemoteCharacteristic = nullptr;
-
   // BLEDevices myBLEDevices;
   SpinBLEAdvertisedDevice myBLEDevices[NUM_BLE_DEVICES];
 

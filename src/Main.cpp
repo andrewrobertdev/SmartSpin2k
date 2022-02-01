@@ -148,8 +148,10 @@ void loop() {  // Delete this task so we can make one that's more memory efficie
 }
 
 void SS2K::maintenanceLoop(void *pvParameters) {
-  static int loopCounter             = 0;
-  static unsigned long intervalTimer = millis();
+  static int loopCounter              = 0;
+  static unsigned long intervalTimer  = millis();
+  static unsigned long intervalTimer2 = millis();
+  static bool isScanning              = false;
   while (true) {
     vTaskDelay(200 / portTICK_RATE_MS);
     if (rtConfig.getShifterPosition() > ss2k.lastShifterPosition) {
@@ -169,6 +171,20 @@ void SS2K::maintenanceLoop(void *pvParameters) {
       // ss2k.restartWifi();
       logHandler.writeLogs();
       intervalTimer = millis();
+    }
+    if ((millis() - intervalTimer2) > 6000) { 
+      
+      if (NimBLEDevice::getScan()->isScanning()) { //workaround to prevent occasional runaway scans
+        if (isScanning == true) {
+          SS2K_LOG(MAIN_LOG_TAG, "Forcing Scan to stop.");
+          NimBLEDevice::getScan()->stop();
+          isScanning = false;
+        } else {
+          isScanning = true;
+        }
+      }
+
+      intervalTimer2 = millis();
     }
 
     if (loopCounter > 4) {

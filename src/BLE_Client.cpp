@@ -31,7 +31,7 @@ void SpinBLEClient::start() {
   // Create the task for the BLE Client loop
   xTaskCreatePinnedToCore(bleClientTask,   /* Task function. */
                           "BLEClientTask", /* name of task. */
-                          4700,            /* Stack size of task */
+                          5500,            /* Stack size of task */
                           NULL,            /* parameter of the task */
                           1,               /* priority of the task  */
                           &BLEClientTask,  /* Task handle to keep track of created task */
@@ -71,6 +71,7 @@ void bleClientTask(void *pvParameters) {
 }
 
 bool SpinBLEClient::connectToServer() {
+  NimBLEDevice::setMTU(255);
   SS2K_LOG(BLE_CLIENT_LOG_TAG, "Initiating Server Connection");
   NimBLEUUID serviceUUID;
   NimBLEUUID charUUID;
@@ -81,11 +82,12 @@ bool SpinBLEClient::connectToServer() {
   for (size_t i = 0; i < NUM_BLE_DEVICES; i++) {
     if (spinBLEClient.myBLEDevices[i].doConnect == true) {   // Client wants to be connected
       if (spinBLEClient.myBLEDevices[i].advertisedDevice) {  // Client is assigned
-        myDevice      = spinBLEClient.myBLEDevices[i].advertisedDevice;
+        myDevice = spinBLEClient.myBLEDevices[i].advertisedDevice;
         device_number = i;
+        SS2K_LOG(BLE_CLIENT_LOG_TAG, "Connecting device %d Address %s", device_number, myDevice->getAddress().toString().c_str());
         break;
       } else {
-        SS2K_LOG(BLE_CLIENT_LOG_TAG, "doConnect and client out of alignment. Resetting device slot");
+        SS2K_LOG(BLE_CLIENT_LOG_TAG, "doConnect and client out of alignment. Resetting device slot. Client %d Address %s", device_number, myDevice->getAddress().toString().c_str());
         spinBLEClient.myBLEDevices[i].reset();
         spinBLEClient.serverScan(true);
         return false;
@@ -119,8 +121,9 @@ bool SpinBLEClient::connectToServer() {
       charUUID    = HEARTCHARACTERISTIC_UUID;
       SS2K_LOG(BLE_CLIENT_LOG_TAG, "Trying to connect to HRM");
     } else {
-      SS2K_LOGE(BLE_CLIENT_LOG_TAG, "No advertised UUID found");
+      SS2K_LOGE(BLE_CLIENT_LOG_TAG, "No advertised UUID found for device %d", device_number);
       spinBLEClient.myBLEDevices[device_number].reset();
+      spinBLEClient.serverScan(true);
       return false;
     }
   } else {
@@ -130,88 +133,84 @@ bool SpinBLEClient::connectToServer() {
     return false;
   }
 
-  NimBLEClient *pClient;
-
   // Check if we have a client we should reuse first
-  if (NimBLEDevice::getClientListSize() > 1) {
-    // Special case when we already know this device, we send false as the
-    //     *  second argument in connect() to prevent refreshing the service database.
-    //     *  This saves considerable time and power.
-    //     *
-    pClient = NimBLEDevice::getClientByPeerAddress(myDevice->getAddress());
-    SS2K_LOG(BLE_CLIENT_LOG_TAG, "Reusing Client");
-    if (pClient) {
-      SS2K_LOG(BLE_CLIENT_LOG_TAG, "Client RSSI %d", pClient->getRssi());
-      SS2K_LOG(BLE_CLIENT_LOG_TAG, "device RSSI %d", myDevice->getRSSI());
-      if (myDevice->getRSSI() == 0) {
-        SS2K_LOG(BLE_CLIENT_LOG_TAG, "no signal detected. aborting.");
-        reconnectTries--;
-        return false;
-      }
-      pClient->disconnect();
-      vTaskDelay(100 / portTICK_PERIOD_MS);
-      if (!pClient->connect(myDevice->getAddress(), true)) {
-        SS2K_LOG(BLE_CLIENT_LOG_TAG, "Reconnect failed ");
-        reconnectTries--;
-        SS2K_LOG(BLE_CLIENT_LOG_TAG, "%d left.", reconnectTries);
-        if (reconnectTries < 1) {
-          spinBLEClient.myBLEDevices[device_number].reset();
-          spinBLEClient.myBLEDevices[device_number].doConnect = false;
-          connectedPM                                         = false;
-          serverScan(false);
-        }
-        return false;
-      }
-      SS2K_LOG(BLE_CLIENT_LOG_TAG, "Reconnecting client");
-      BLERemoteService *pRemoteService = pClient->getService(serviceUUID);
-
-      if (pRemoteService == nullptr) {
-        SS2K_LOG(BLE_CLIENT_LOG_TAG, "Couldn't find Service");
-        reconnectTries--;
-        return false;
-      }
-
-      pRemoteCharacteristic = pRemoteService->getCharacteristic(charUUID);
-
-      if (pRemoteCharacteristic == nullptr) {
-        SS2K_LOG(BLE_CLIENT_LOG_TAG, "Couldn't find Characteristic");
-        reconnectTries--;
-        return false;
-      }
-
-      if (pRemoteCharacteristic->canNotify()) {
-        SS2K_LOG(BLE_CLIENT_LOG_TAG, "Found %s on reconnect", pRemoteCharacteristic->getUUID().toString().c_str());
-        reconnectTries = MAX_RECONNECT_TRIES;
-        // VV Is this really needed? Shouldn't it just carry over from the previous connection? VV
-        spinBLEClient.myBLEDevices[device_number].set(myDevice, pClient->getConnId(), serviceUUID, charUUID);
+  NimBLEClient *pClient = NimBLEDevice::getClientByPeerAddress(myDevice->getAddress());
+  SS2K_LOG(BLE_CLIENT_LOG_TAG, "Reusing Client");
+  if (pClient) {
+    /*SS2K_LOG(BLE_CLIENT_LOG_TAG, "Client RSSI %d", pClient->getRssi());
+    SS2K_LOG(BLE_CLIENT_LOG_TAG, "device RSSI %d", myDevice->getRSSI());
+    if (myDevice->getRSSI() == 0) {
+      SS2K_LOG(BLE_CLIENT_LOG_TAG, "no signal detected. aborting.");
+      reconnectTries--;
+      return false;
+    }*/
+    // pClient->disconnect();
+    vTaskDelay(100 / portTICK_PERIOD_MS);
+    if (!pClient->connect()) {
+      SS2K_LOG(BLE_CLIENT_LOG_TAG, "Reconnect failed ");
+      reconnectTries--;
+      SS2K_LOG(BLE_CLIENT_LOG_TAG, "%d left.", reconnectTries);
+      if (reconnectTries < 1) {
+        spinBLEClient.myBLEDevices[device_number].reset();
         spinBLEClient.myBLEDevices[device_number].doConnect = false;
-        pRemoteCharacteristic->subscribe(true, onNotify);
-        postConnect(pClient);
-        return true;
-      } else {
-        SS2K_LOG(BLE_CLIENT_LOG_TAG, "Unable to subscribe to notifications");
-        return false;
+        connectedPM                                         = false;
+        serverScan(false);
       }
-    } else {  // We don't already have a client that knows this device, we will check for a client that is disconnected that we can use.
-      SS2K_LOG(BLE_CLIENT_LOG_TAG, "No Previous client found");
-      // pClient = NimBLEDevice::getDisconnectedClient();
+      return false;
     }
+    SS2K_LOG(BLE_CLIENT_LOG_TAG, "Reconnecting client");
+
+    BLERemoteService *pRemoteService = pClient->getService(serviceUUID);
+    if (pRemoteService == nullptr) {
+      SS2K_LOG(BLE_CLIENT_LOG_TAG, "Couldn't find Service");
+      reconnectTries--;
+      return false;
+    }
+
+    BLERemoteCharacteristic *pRemoteCharacteristic = pRemoteService->getCharacteristic(charUUID);
+    if (pRemoteCharacteristic == nullptr) {
+      SS2K_LOG(BLE_CLIENT_LOG_TAG, "Couldn't find Characteristic");
+      reconnectTries--;
+      return false;
+    }
+
+    if (pRemoteCharacteristic->canNotify()) {
+      SS2K_LOG(BLE_CLIENT_LOG_TAG, "Found %s on reconnect", pRemoteCharacteristic->getUUID().toString().c_str());
+      reconnectTries = MAX_RECONNECT_TRIES;
+      // VV Is this really needed? Shouldn't it just carry over from the previous connection? VV
+      spinBLEClient.myBLEDevices[device_number].set(myDevice, pClient->getConnId(), serviceUUID, charUUID);
+      spinBLEClient.myBLEDevices[device_number].doConnect = false;
+      pRemoteCharacteristic->subscribe(true, onNotify);
+      postConnect(pClient);
+      return true;
+    } else {
+      SS2K_LOG(BLE_CLIENT_LOG_TAG, "Unable to subscribe to notifications");
+      return false;
+    }
+  } else {  // We don't already have a client that knows this device.
+    SS2K_LOG(BLE_CLIENT_LOG_TAG, "No Previous client found");
   }
   String t_name = "";
   if (myDevice->haveName()) {
     String t_name = myDevice->getName().c_str();
   }
   SS2K_LOG(BLE_CLIENT_LOG_TAG, "Forming a connection to: %s %s", t_name.c_str(), myDevice->getAddress().toString().c_str());
-  pClient = NimBLEDevice::createClient();
+  pClient = NimBLEDevice::createClient(myDevice->getAddress());
   SS2K_LOG(BLE_CLIENT_LOG_TAG, " - Created client");
   pClient->setClientCallbacks(new MyClientCallback(), true);
   // Connect to the remove BLE Server.
-  pClient->setConnectionParams(240, 560, 1, 1000);
+  pClient->setConnectionParams(400, 800, 0, 2000);
   /** Set how long we are willing to wait for the connection to complete (seconds), default is 30. */
-  pClient->setConnectTimeout(5);
-  pClient->connect(myDevice->getAddress());  // if you pass BLEAdvertisedDevice instead of address, it will be recognized type of peer device address (public or private)
-  SS2K_LOG(BLE_CLIENT_LOG_TAG, " - Connected to server");
-  //SS2K_LOG(BLE_CLIENT_LOG_TAG, " - RSSI %d", pClient->getRssi());
+  pClient->setConnectTimeout(10);
+  if (pClient->connect(myDevice), true) {  // if you pass BLEAdvertisedDevice instead of address, it will be recognized type of peer device address (public or private)
+    SS2K_LOG(BLE_CLIENT_LOG_TAG, " - Connected to server");
+  } else {
+    SS2K_LOG(BLE_CLIENT_LOG_TAG, " - Couldn't connect to device %d Error %d", device_number, pClient->getLastError());
+    spinBLEClient.myBLEDevices[device_number].reset();
+    spinBLEClient.serverScan(true);
+    return false;
+  }
+  // SS2K_LOG(BLE_CLIENT_LOG_TAG, " - RSSI %d", pClient->getRssi());
   // Obtain a reference to the service we are after in the remote BLE server.
   BLERemoteService *pRemoteService = pClient->getService(serviceUUID);
   if (pRemoteService == nullptr) {
@@ -221,11 +220,13 @@ bool SpinBLEClient::connectToServer() {
     successful++;
 
     // Obtain a reference to the characteristic in the service of the remote BLE server.
-    pRemoteCharacteristic = pRemoteService->getCharacteristic(charUUID);
+    BLERemoteCharacteristic *pRemoteCharacteristic = pRemoteService->getCharacteristic(charUUID);
     if (pRemoteCharacteristic == nullptr) {
       SS2K_LOG(BLE_CLIENT_LOG_TAG, "Failed to find our characteristic UUID: %s", charUUID.toString().c_str());
     } else {  // need to iterate through these for all UUID's
       SS2K_LOG(BLE_CLIENT_LOG_TAG, " - Found Characteristic: %s", pRemoteCharacteristic->getUUID().toString().c_str());
+      reconnectTries = MAX_RECONNECT_TRIES;
+      scanRetries    = MAX_SCAN_RETRIES;
       successful++;
     }
 
@@ -237,14 +238,12 @@ bool SpinBLEClient::connectToServer() {
 
     if (pRemoteCharacteristic->canNotify()) {
       pRemoteCharacteristic->subscribe(true, onNotify);
-      reconnectTries = MAX_RECONNECT_TRIES;
-      scanRetries    = MAX_SCAN_RETRIES;
     } else {
       SS2K_LOG(BLE_CLIENT_LOG_TAG, "Unable to subscribe to notifications");
     }
   }
   if (successful > 0) {
-    SS2K_LOG(BLE_CLIENT_LOG_TAG, "Successful %s subscription.", pRemoteCharacteristic->getUUID().toString().c_str());
+    SS2K_LOG(BLE_CLIENT_LOG_TAG, "Successful %s subscription.", pRemoteService->getCharacteristic(charUUID)->getUUID().toString().c_str());
     spinBLEClient.myBLEDevices[device_number].doConnect = false;
     reconnectTries                                      = MAX_RECONNECT_TRIES;
     spinBLEClient.myBLEDevices[device_number].set(myDevice, pClient->getConnId(), serviceUUID, charUUID);
@@ -254,12 +253,13 @@ bool SpinBLEClient::connectToServer() {
     return true;
   }
   reconnectTries--;
-  SS2K_LOG(BLE_CLIENT_LOG_TAG, "disconnecting Client");
-  if (pClient->isConnected()) {
-    pClient->disconnect();
-  }
+  // SS2K_LOG(BLE_CLIENT_LOG_TAG, "disconnecting Client");
+  // if (pClient->isConnected()) {
+  // pClient->disconnect();
+  //}
   if (reconnectTries < 1) {
     spinBLEClient.myBLEDevices[device_number].reset();  // Give up on this device
+    BLEDevice::deleteClient(pClient);
   }
   return false;
 }
@@ -271,7 +271,7 @@ void SpinBLEClient::MyClientCallback::onConnect(NimBLEClient *pClient) {
   // Currently Not Used
 }
 
-void SpinBLEClient::MyClientCallback::onDisconnect(NimBLEClient *pclient) {
+void SpinBLEClient::MyClientCallback::onDisconnect(NimBLEClient *pClient) {
   SS2K_LOG(BLE_CLIENT_LOG_TAG, "Disconnect Called");
 
   if (spinBLEClient.intentionalDisconnect) {
@@ -279,8 +279,8 @@ void SpinBLEClient::MyClientCallback::onDisconnect(NimBLEClient *pclient) {
     spinBLEClient.intentionalDisconnect = false;
     return;
   }
-  if (!pclient->isConnected()) {
-    NimBLEAddress addr = pclient->getPeerAddress();
+  if (!pClient->isConnected()) {
+    NimBLEAddress addr = pClient->getPeerAddress();
     // auto addr = BLEDevice::getDisconnectedClient()->getPeerAddress();
     SS2K_LOG(BLE_CLIENT_LOG_TAG, "This disconnected client Address %s", addr.toString().c_str());
     for (size_t i = 0; i < NUM_BLE_DEVICES; i++) {
@@ -393,7 +393,7 @@ void SpinBLEClient::scanProcess() {
   // Load the scan into a Json String
   int count = foundDevices.getCount();
 
-  StaticJsonDocument<1000> devices;
+  StaticJsonDocument<2000> devices;
 
   String device = "";
 
@@ -493,7 +493,7 @@ void SpinBLEClient::postConnect(NimBLEClient *pClient) {
           NimBLERemoteCharacteristic *writeCharacteristic = pClient->getService(ECHELON_SERVICE_UUID)->getCharacteristic(ECHELON_WRITE_UUID);
           if (writeCharacteristic == nullptr) {
             SS2K_LOG(BLE_CLIENT_LOG_TAG, "Failed to find Echelon write characteristic UUID: %s", ECHELON_WRITE_UUID.toString().c_str());
-            pClient->disconnect();
+            // pClient->disconnect();
             return;
           }
           // Enable device notifications
@@ -517,48 +517,48 @@ void SpinBLEClient::postConnect(NimBLEClient *pClient) {
 
 bool SpinBLEAdvertisedDevice::enqueueData(uint8_t *data, size_t length) {
   NotifyData notifyData;
-  //Serial.println("enqueue Called");
+  // Serial.println("enqueue Called");
   if (!this->dataBufferQueue) {
-    //Serial.println("Creating queue");
+    // Serial.println("Creating queue");
     this->dataBufferQueue = xQueueCreate(6, sizeof(NotifyData));
     if (!this->dataBufferQueue) {
-      //Serial.println("Failed to create queue");
+      // Serial.println("Failed to create queue");
       return pdFALSE;
     }
   }
 
   if (!uxQueueSpacesAvailable(this->dataBufferQueue)) {
-    //Serial.println("No space available in queue. Skipping enqueue of data.");
+    // Serial.println("No space available in queue. Skipping enqueue of data.");
     return pdFALSE;
   }
 
   notifyData.length = length;
   for (size_t i = 0; i < length; i++) {
     notifyData.data[i] = data[i];
-    //Serial.printf("%02x ", notifyData.data[i]);
+    // Serial.printf("%02x ", notifyData.data[i]);
   }
-  //Serial.printf("\n");
- 
+  // Serial.printf("\n");
+
   if (xQueueSendToBack(this->dataBufferQueue, &notifyData, 10) == pdFALSE) {
-  //  Serial.println("Failed to enqueue data.  Freeing data.");
+    //  Serial.println("Failed to enqueue data.  Freeing data.");
     return pdFALSE;
   }
-  //Serial.printf("Successfully enqueued data. %d. \n", notifyData.length);
+  // Serial.printf("Successfully enqueued data. %d. \n", notifyData.length);
   return pdTRUE;
 }
 
 NotifyData SpinBLEAdvertisedDevice::dequeueData() {
   NotifyData receivedNotifyData;
   if (this->dataBufferQueue == nullptr) {
-  //  Serial.println("Queue not created.  Skipping dequeue of data.");
+    //  Serial.println("Queue not created.  Skipping dequeue of data.");
     receivedNotifyData.length = 0;
     return receivedNotifyData;
   }
   if (xQueueReceive(this->dataBufferQueue, &receivedNotifyData, 0) == pdTRUE) {
-  //  Serial.printf("Successfully dequeued data from queue. %d \n", receivedNotifyData.length);
+    //  Serial.printf("Successfully dequeued data from queue. %d \n", receivedNotifyData.length);
     return receivedNotifyData;
   }
-  //Serial.println("buffer was empty");
+  // Serial.println("buffer was empty");
   receivedNotifyData.length = 0;
   return receivedNotifyData;
 }
