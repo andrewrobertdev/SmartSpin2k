@@ -104,14 +104,14 @@ bool SpinBLEClient::connectToServer() {
       serviceUUID = FLYWHEEL_UART_SERVICE_UUID;
       charUUID    = FLYWHEEL_UART_TX_UUID;
       SS2K_LOG(BLE_CLIENT_LOG_TAG, "trying to connect to Flywheel Bike");
-    } else if (myDevice->isAdvertisingService(CYCLINGPOWERSERVICE_UUID)) {
-      serviceUUID = CYCLINGPOWERSERVICE_UUID;
-      charUUID    = CYCLINGPOWERMEASUREMENT_UUID;
-      SS2K_LOG(BLE_CLIENT_LOG_TAG, "trying to connect to PM");
     } else if (myDevice->isAdvertisingService(FITNESSMACHINESERVICE_UUID)) {
       serviceUUID = FITNESSMACHINESERVICE_UUID;
       charUUID    = FITNESSMACHINEINDOORBIKEDATA_UUID;
       SS2K_LOG(BLE_CLIENT_LOG_TAG, "trying to connect to Fitness machine service");
+    } else if (myDevice->isAdvertisingService(CYCLINGPOWERSERVICE_UUID)) {
+      serviceUUID = CYCLINGPOWERSERVICE_UUID;
+      charUUID    = CYCLINGPOWERMEASUREMENT_UUID;
+      SS2K_LOG(BLE_CLIENT_LOG_TAG, "trying to connect to Cycling Power Service");
     } else if (myDevice->isAdvertisingService(ECHELON_DEVICE_UUID)) {
       serviceUUID = ECHELON_SERVICE_UUID;
       charUUID    = ECHELON_DATA_UUID;
@@ -119,7 +119,7 @@ bool SpinBLEClient::connectToServer() {
     } else if (myDevice->isAdvertisingService(HEARTSERVICE_UUID)) {
       serviceUUID = HEARTSERVICE_UUID;
       charUUID    = HEARTCHARACTERISTIC_UUID;
-      SS2K_LOG(BLE_CLIENT_LOG_TAG, "Trying to connect to HRM");
+      SS2K_LOG(BLE_CLIENT_LOG_TAG, "Trying to connect to Heart Service");
     } else {
       SS2K_LOGE(BLE_CLIENT_LOG_TAG, "No advertised UUID found for device %d", device_number);
       spinBLEClient.myBLEDevices[device_number].reset();
@@ -135,8 +135,8 @@ bool SpinBLEClient::connectToServer() {
 
   // Check if we have a client we should reuse first
   NimBLEClient *pClient = NimBLEDevice::getClientByPeerAddress(myDevice->getAddress());
-  SS2K_LOG(BLE_CLIENT_LOG_TAG, "Reusing Client");
   if (pClient) {
+    SS2K_LOG(BLE_CLIENT_LOG_TAG, "Reusing Client");
     /*SS2K_LOG(BLE_CLIENT_LOG_TAG, "Client RSSI %d", pClient->getRssi());
     SS2K_LOG(BLE_CLIENT_LOG_TAG, "device RSSI %d", myDevice->getRSSI());
     if (myDevice->getRSSI() == 0) {
@@ -146,6 +146,7 @@ bool SpinBLEClient::connectToServer() {
     }*/
     // pClient->disconnect();
     vTaskDelay(100 / portTICK_PERIOD_MS);
+    pClient->setConnectTimeout(20);
     if (!pClient->connect()) {
       SS2K_LOG(BLE_CLIENT_LOG_TAG, "Reconnect failed ");
       reconnectTries--;
@@ -199,11 +200,12 @@ bool SpinBLEClient::connectToServer() {
   SS2K_LOG(BLE_CLIENT_LOG_TAG, " - Created client");
   pClient->setClientCallbacks(new MyClientCallback(), true);
   // Connect to the remove BLE Server.
-  pClient->setConnectionParams(400, 800, 0, 2000);
+  pClient->setConnectionParams(200, 800, 0, 200);
   /** Set how long we are willing to wait for the connection to complete (seconds), default is 30. */
-  pClient->setConnectTimeout(10);
+  pClient->setConnectTimeout(2);
   if (pClient->connect(myDevice), true) {  // if you pass BLEAdvertisedDevice instead of address, it will be recognized type of peer device address (public or private)
     SS2K_LOG(BLE_CLIENT_LOG_TAG, " - Connected to server");
+    vTaskDelay(200 / portTICK_PERIOD_MS);
   } else {
     SS2K_LOG(BLE_CLIENT_LOG_TAG, " - Couldn't connect to device %d Error %d", device_number, pClient->getLastError());
     spinBLEClient.myBLEDevices[device_number].reset();
@@ -217,6 +219,7 @@ bool SpinBLEClient::connectToServer() {
     SS2K_LOG(BLE_CLIENT_LOG_TAG, "Failed to find service: %s", serviceUUID.toString().c_str());
   } else {
     SS2K_LOG(BLE_CLIENT_LOG_TAG, " - Found service: %s", pRemoteService->getUUID().toString().c_str());
+    vTaskDelay(200 / portTICK_PERIOD_MS);
     successful++;
 
     // Obtain a reference to the characteristic in the service of the remote BLE server.
@@ -267,11 +270,11 @@ bool SpinBLEClient::connectToServer() {
 /**  None of these are required as they will be handled by the library with defaults. **
  **                       Remove as you see fit for your needs                        */
 
-void SpinBLEClient::MyClientCallback::onConnect(NimBLEClient *pClient) {
+void MyClientCallback::onConnect(NimBLEClient *pClient) {
   // Currently Not Used
 }
 
-void SpinBLEClient::MyClientCallback::onDisconnect(NimBLEClient *pClient) {
+void MyClientCallback::onDisconnect(NimBLEClient *pClient) {
   SS2K_LOG(BLE_CLIENT_LOG_TAG, "Disconnect Called");
 
   if (spinBLEClient.intentionalDisconnect) {
@@ -307,23 +310,23 @@ void SpinBLEClient::MyClientCallback::onDisconnect(NimBLEClient *pClient) {
 
 /***************** New - Security handled here ********************
 ****** Note: these are the same return values as defaults ********/
-uint32_t SpinBLEClient::MyClientCallback::onPassKeyRequest() {
+uint32_t MyClientCallback::onPassKeyRequest() {
   SS2K_LOG(BLE_CLIENT_LOG_TAG, "Client PassKeyRequest");
   return 123456;
 }
-bool SpinBLEClient::MyClientCallback::onConfirmPIN(uint32_t pass_key) {
+bool MyClientCallback::onConfirmPIN(uint32_t pass_key) {
   SS2K_LOG(BLE_CLIENT_LOG_TAG, "The passkey YES/NO number: %ud", pass_key);
   return true;
 }
 
-void SpinBLEClient::MyClientCallback::onAuthenticationComplete(ble_gap_conn_desc desc) { SS2K_LOG(BLE_CLIENT_LOG_TAG, "Starting BLE work!"); }
+void MyClientCallback::onAuthenticationComplete(ble_gap_conn_desc desc) { SS2K_LOG(BLE_CLIENT_LOG_TAG, "Starting BLE work!"); }
 /*******************************************************************/
 
 /**
  * Scan for BLE servers and find the first one that advertises the service we are looking for.
  */
 
-void SpinBLEClient::MyAdvertisedDeviceCallback::onResult(BLEAdvertisedDevice *advertisedDevice) {
+void MyAdvertisedDeviceCallback::onResult(BLEAdvertisedDevice *advertisedDevice) {
   auto advertisedDeviceInfo = advertisedDevice->toString();
   ss2k_remove_newlines(&advertisedDeviceInfo);
   SS2K_LOG(BLE_CLIENT_LOG_TAG, "BLE Advertised Device found: %s", advertisedDeviceInfo.c_str());

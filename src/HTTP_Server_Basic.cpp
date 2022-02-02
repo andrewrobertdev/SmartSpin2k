@@ -49,7 +49,6 @@ void startWifi() {
   SS2K_LOG(HTTP_SERVER_LOG_TAG, "Connecting to: %s", userConfig.getSsid());
   if (String(WiFi.SSID()) != userConfig.getSsid()) {
     WiFi.mode(WIFI_STA);
-    WiFi.setTxPower(WIFI_POWER_19_5dBm);
     WiFi.begin(userConfig.getSsid(), userConfig.getPassword());
     WiFi.setAutoReconnect(true);
   }
@@ -69,6 +68,7 @@ void startWifi() {
   if (WiFi.status() == WL_CONNECTED) {
     myIP                          = WiFi.localIP();
     httpServer.internetConnection = true;
+    WiFi.setTxPower(WIFI_POWER_19_5dBm);
   }
 
   // Couldn't connect to existing network, Create SoftAP

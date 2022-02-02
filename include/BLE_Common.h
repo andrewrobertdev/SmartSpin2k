@@ -19,7 +19,7 @@
 #define BLE_SERVER_LOG_TAG  "BLE_Server"
 #define BLE_SETUP_LOG_TAG   "BLE_Setup"
 #define FMTS_SERVER_LOG_TAG "FTMS_SERVER"
-#define CUSTOM_CHAR_LOG_TAG  "Custom_C"
+#define CUSTOM_CHAR_LOG_TAG "Custom_C"
 
 // custom characteristic codes
 #define BLE_firmwareUpdateURL     0x01
@@ -210,19 +210,20 @@ class SpinBLEClient {
   void postConnect(NimBLEClient *pClient);
 
  private:
-  class MyAdvertisedDeviceCallback : public NimBLEAdvertisedDeviceCallbacks {
-   public:
-    void onResult(NimBLEAdvertisedDevice *);
-  };
+};
 
-  class MyClientCallback : public NimBLEClientCallbacks {
-   public:
-    void onConnect(BLEClient *);
-    void onDisconnect(BLEClient *);
-    uint32_t onPassKeyRequest();
-    bool onConfirmPIN(uint32_t);
-    void onAuthenticationComplete(ble_gap_conn_desc);
-  };
+class MyAdvertisedDeviceCallback : public NimBLEAdvertisedDeviceCallbacks {
+ public:
+  void onResult(NimBLEAdvertisedDevice *);
+};
+
+class MyClientCallback : public NimBLEClientCallbacks {
+ public:
+  void onConnect(BLEClient *);
+  void onDisconnect(BLEClient *);
+  uint32_t onPassKeyRequest();
+  bool onConfirmPIN(uint32_t);
+  void onAuthenticationComplete(ble_gap_conn_desc);
 };
 
 extern SpinBLEClient spinBLEClient;
