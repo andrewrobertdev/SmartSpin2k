@@ -152,6 +152,7 @@
     if (!updatePending) {
       updatePending = true
       var xhttp = new XMLHttpRequest();
+
       xhttp.onreadystatechange = function () {
         updatePending = false;
         if (this.readyState === 4 && this.status === 200) {
@@ -165,6 +166,11 @@
           document.getElementById("connectedPowerMeter").value = obj.connectedPowerMeter;
         }
       };
+
+      xhttp.onerror = function (evt) {
+        writeToLog("Error reading config values.");
+      };
+
       xhttp.open("GET", "/configJSON", true);
       xhttp.send();
     }
@@ -174,6 +180,7 @@
     if (!updatePending) {
       updatePending = true
       var xhttp = new XMLHttpRequest();
+
       xhttp.onreadystatechange = function () {
         updatePending = false;
         if (this.readyState === 4 /*DONE*/) {
@@ -188,6 +195,11 @@
           }
         }
       };
+
+      xhttp.onerror = function (evt) {
+        writeToLog("Error reading runtime values.");
+      };
+
       xhttp.open("GET", "/runtimeConfigJSON", true);
       xhttp.send();
     }
@@ -212,13 +224,12 @@
   }, false);
 
   function setupLogging() {
-    var debugElement = document.getElementById("debug");
-    var followElement = document.getElementById("follow");
     var wsAddress = `ws://${document.location.host}:8080`;
 
     try {
       if (websocket != null) {
         if ((Date.now() - lastLogMessageTime) > 60_000) {
+          writeToLog('Timeout elapsed close websockt.')
           websocket.close();
           websocket = null;
         } else {
@@ -229,29 +240,37 @@
       // Set lastLogMessageTime to give time to connect to server
       lastLogMessageTime = Date.now();
       websocket = new WebSocket(wsAddress);
+      writeToLog('Try to connect to websocket to receive logs...')
 
       websocket.onmessage = (evt) => {
         lastLogMessageTime = Date.now();
-        if (evt?.data == null) {
+        if (evt?.data == null || evt.data.length == 0) {
           return;
         }
 
-        logEntries.push(event.data);
-        if (logEntries.length > maxLogentries) {
-          logEntries = logEntries.slice(1, logEntries.length - 10);
-        }
-
-        debugElement.innerHTML = logEntries.join("<br>");
-        if (followElement.checked) {
-          debugElement.scrollTop = debugElement.scrollHeight - debugElement.clientHeight
-        }
+        writeToLog(evt.data);
       }
     } catch (e) {
-      console.error("Could not connect to Websocket.", e);
+      writeToLog(["Could not connect to Websocket." + e]);
       if (websocket != null) {
         websocket.close();
       }
       websocket = undefined;
+    }
+  }
+
+  function writeToLog(logMessages) {
+    var debugElement = document.getElementById("debug");
+    var followElement = document.getElementById("follow");
+
+    logEntries.push(logMessages);
+    if (logEntries.length > maxLogentries) {
+      logEntries = logEntries.slice(1, logEntries.length - 10);
+    }
+
+    debugElement.innerHTML = logEntries.join("<br>");
+    if (followElement.checked) {
+      debugElement.scrollTop = debugElement.scrollHeight - debugElement.clientHeight
     }
   }
 
