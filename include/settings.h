@@ -10,7 +10,7 @@
 #include "SS2KLog.h"
 
 // Update firmware on boot?
-#define AUTO_FIRMWARE_UPDATE true
+#define AUTO_FIRMWARE_UPDATE false
 
 // Default Bluetooth WiFi and MDNS Name
 #define DEVICE_NAME "SmartSpin2K"
@@ -21,7 +21,7 @@
 // default URL To get Updates From.
 // If changed you'll also need to get a root certificate from the new server
 // and put it in /include/cert.h
-#define FW_UPDATEURL "https://raw.githubusercontent.com/doudar/OTAUpdates/main/"
+#define FW_UPDATEURL "https://raw.githubusercontent.com/doudar/OTAUpdates/mai/"
 
 // File that contains Version info
 #define FW_VERSIONFILE "version.txt"
