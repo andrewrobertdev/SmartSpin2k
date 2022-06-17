@@ -23,6 +23,10 @@ float avgRPM             = 0;
 int count                = 0;
 float RPM                = 0;
 
+const int freq = 5000;
+const int pwmChannel = 0;
+const int resolution = 8;
+
 
 HardwareSerial stepperSerial(2);
 TMC2208Stepper driver(&SERIAL_PORT, R_SENSE);  // Hardware Serial
@@ -95,6 +99,7 @@ void setup() {
   pinMode(SHIFT_UP_PIN, INPUT_PULLUP);    // Push-Button with input Pullup
   pinMode(SHIFT_DOWN_PIN, INPUT_PULLUP);  // Push-Button with input Pullup
   pinMode(LED_PIN, OUTPUT);
+  pinMode(BRAKE_LED, OUTPUT);
   pinMode(ENABLE_PIN, OUTPUT);
   pinMode(DIR_PIN, OUTPUT);   // Stepper Direction Pin
   pinMode(STEP_PIN, OUTPUT);  // Stepper Step Pin
@@ -104,6 +109,12 @@ void setup() {
   digitalWrite(DIR_PIN, LOW);
   digitalWrite(STEP_PIN, LOW);
   digitalWrite(LED_PIN, LOW);
+
+
+  ledcSetup(pwmChannel, freq, resolution);
+  ledcAttachPin(BRAKE_PIN, pwmChannel);
+
+
   
   ss2k.setupTMCStepperDriver();
 
@@ -193,8 +204,23 @@ void SS2K::maintenanceLoop(void *pvParameters) {
     }
     }
     count++;
-
     attachInterrupt(digitalPinToInterrupt(CADENCE_PIN), ss2k.cadenceUpdate, CHANGE);
+
+    float floatPWM = rtConfig.getCurrentIncline(); //get incline value
+    int   intPWM = static_cast<int>(floatPWM);    //convert to int
+    intPWM = intPWM / 2;
+    intPWM = 255 - intPWM;         //KICKR MOSFET Brake on = LOW          
+    if (intPWM > 255){
+      digitalWrite(BRAKE_LED, HIGH);
+      intPWM = 255;
+    }
+    if (intPWM < 0){
+      digitalWrite(BRAKE_LED, LOW);
+      intPWM = 0;
+    }                 //convert to value between 0 - 255
+    ledcWrite(pwmChannel, intPWM);
+    // SS2K_LOG(MAIN_LOG_TAG, "PWM Value: %d", intPWM);
+    // SS2K_LOG(MAIN_LOG_TAG, "floatPWM Value: %f", floatPWM);
 
     
 
@@ -262,67 +288,84 @@ void SS2K::restartWifi() {
 }
 
 void SS2K::moveStepper(void *pvParameters) {
-  engine.init();
-  bool _stepperDir = userConfig.getStepperDir();
-  stepper          = engine.stepperConnectToPin(STEP_PIN);
-  stepper->setDirectionPin(DIR_PIN, _stepperDir);
-  stepper->setEnablePin(ENABLE_PIN);
-  stepper->setAutoEnable(true);
-  stepper->setSpeedInHz(STEPPER_SPEED);
-  stepper->setAcceleration(STEPPER_ACCELERATION);
-  stepper->setDelayToDisable(1000);
+  engine.init(); 
 
-  while (1) {
-    if (stepper) {
-      ss2k.stepperIsRunning = stepper->isRunning();
-      if (!ss2k.externalControl) {
-        if (rtConfig.getERGMode()) {
-          // ERG Mode
-          // Shifter not used.
-          stepper->setSpeedInHz(STEPPER_ERG_SPEED);
-          ss2k.targetPosition = rtConfig.getTargetIncline();
-        } else {
-          // Simulation Mode
-          ss2k.targetPosition   = rtConfig.getShifterPosition() * userConfig.getShiftStep();
-          ss2k.targetPosition += rtConfig.getTargetIncline() * userConfig.getInclineMultiplier();
-        }
-      }
+  // float floatPWM = rtConfig.getTargetIncline(); //get incline value
+  // int   intPWM = static_cast<int>(floatPWM);    //convert to int
+  // intPWM = intPWM * 25;                   
+  // if (intPWM > 255){
+  //   intPWM = 255;
+  // }
+  // if (intPWM < 0){
+  //   intPWM = 0;
+  // }                 //convert to value between 0 - 255
+  // ledcWrite(pwmChannel, intPWM);
+  // Serial.println(("PWM Value: ") + intPWM);
+  // SS2K_LOG(MAIN_LOG_TAG, "PWM Value: %d", intPWM);
 
-      if (ss2k.syncMode) {
-        stepper->stopMove();
-        vTaskDelay(100 / portTICK_PERIOD_MS);
-        stepper->setCurrentPosition(ss2k.targetPosition);
-        vTaskDelay(100 / portTICK_PERIOD_MS);
-      }
+  
+  bool _stepperDir = userConfig.getStepperDir(); 
+  stepper          = engine.stepperConnectToPin(STEP_PIN); 
+  stepper->setDirectionPin(DIR_PIN, _stepperDir); 
+  stepper->setEnablePin(ENABLE_PIN); 
+  stepper->setAutoEnable(true); 
+  stepper->setSpeedInHz(STEPPER_SPEED); 
+  stepper->setAcceleration(STEPPER_ACCELERATION); 
+  stepper->setDelayToDisable(1000); 
+  
+  while (1) { 
+    if (stepper) { 
+      ss2k.stepperIsRunning = stepper->isRunning(); 
+      if (!ss2k.externalControl) { 
+        if (rtConfig.getERGMode()) { 
+           // ERG Mode 
+           // Shifter not used. 
+          stepper->setSpeedInHz(STEPPER_ERG_SPEED); 
+          ss2k.targetPosition = rtConfig.getTargetIncline(); 
+        } else { 
+           // Simulation Mode 
+           ss2k.targetPosition   = rtConfig.getShifterPosition() * userConfig.getShiftStep(); 
+           ss2k.targetPosition += rtConfig.getTargetIncline() * userConfig.getInclineMultiplier(); 
+        } 
+      } 
+  
+      if (ss2k.syncMode) { 
+        stepper->stopMove(); 
+        vTaskDelay(100 / portTICK_PERIOD_MS); 
+        stepper->setCurrentPosition(ss2k.targetPosition); 
+        vTaskDelay(100 / portTICK_PERIOD_MS); 
+      } 
+  
+      if ((ss2k.targetPosition >= rtConfig.getMinStep()) && (ss2k.targetPosition <= rtConfig.getMaxStep())) { 
+        stepper->moveTo(ss2k.targetPosition); 
+       } else if (ss2k.targetPosition <= rtConfig.getMinStep()) {  // Limit Stepper to Min Position 
+        stepper->moveTo(rtConfig.getMinStep()); 
+       } else {  // Limit Stepper to Max Position 
+        stepper->moveTo(rtConfig.getMaxStep()); 
+      } 
+  
+      vTaskDelay(100 / portTICK_PERIOD_MS); 
+      rtConfig.setCurrentIncline((float)stepper->getCurrentPosition()); 
+  
+      if (connectedClientCount() > 0) { 
+         stepper->setAutoEnable(false);  // Keep the stepper from rolling back due to head tube slack. Motor Driver still lowers power between moves 
+        stepper->enableOutputs(); 
+      } else { 
+         stepper->setAutoEnable(true);  // disable output FETs between moves so stepper can cool. Can still shift. 
+      } 
+  
+       if (_stepperDir != userConfig.getStepperDir()) {  // User changed the config direction of the stepper wires 
+        _stepperDir = userConfig.getStepperDir(); 
+        while (stepper->isMotorRunning()) { 
+          vTaskDelay(100 / portTICK_PERIOD_MS); 
+        } 
+        stepper->setDirectionPin(DIR_PIN, _stepperDir); 
+      } 
+    } 
+  } 
+} 
 
-      if ((ss2k.targetPosition >= rtConfig.getMinStep()) && (ss2k.targetPosition <= rtConfig.getMaxStep())) {
-        stepper->moveTo(ss2k.targetPosition);
-      } else if (ss2k.targetPosition <= rtConfig.getMinStep()) {  // Limit Stepper to Min Position
-        stepper->moveTo(rtConfig.getMinStep());
-      } else {  // Limit Stepper to Max Position
-        stepper->moveTo(rtConfig.getMaxStep());
-      }
 
-      vTaskDelay(100 / portTICK_PERIOD_MS);
-      rtConfig.setCurrentIncline((float)stepper->getCurrentPosition());
-
-      if (connectedClientCount() > 0) {
-        stepper->setAutoEnable(false);  // Keep the stepper from rolling back due to head tube slack. Motor Driver still lowers power between moves
-        stepper->enableOutputs();
-      } else {
-        stepper->setAutoEnable(true);  // disable output FETs between moves so stepper can cool. Can still shift.
-      }
-
-      if (_stepperDir != userConfig.getStepperDir()) {  // User changed the config direction of the stepper wires
-        _stepperDir = userConfig.getStepperDir();
-        while (stepper->isMotorRunning()) {
-          vTaskDelay(100 / portTICK_PERIOD_MS);
-        }
-        stepper->setDirectionPin(DIR_PIN, _stepperDir);
-      }
-    }
-  }
-}
 
 bool IRAM_ATTR SS2K::deBounce() {
   if ((millis() - lastDebounceTime) > debounceDelay) {  // <----------------This should be assigned it's own task and just switch a global bool whatever the reading is at, it's

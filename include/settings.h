@@ -9,11 +9,6 @@
 
 #include "SS2KLog.h"
 
-#define TIMER0_INTERVAL_MS        1
-#define DEBOUNCING_INTERVAL_MS    80
-
-
-
 // Update firmware on boot?
 #define AUTO_FIRMWARE_UPDATE false
 
@@ -48,7 +43,7 @@
 // into actual stepper steps that move the stepper motor. It takes 2,181.76 steps to rotate the knob 1 full revolution. with hardware version 1.
 // Incline_Multiplier may be able to be removed in the future by dividing ShiftSteps by ~200 to get this value but we're not quite ready
 // to make that commitment yet.
-#define INCLINE_MULTIPLIER 3.0
+#define INCLINE_MULTIPLIER 1.0
 
 // Minumum value for power correction factor user setting
 #define MIN_PCF .5
@@ -96,6 +91,12 @@
 
 //Hardware pin for cadence counter
 #define CADENCE_PIN 23
+
+// Hardware pin for braking PWM
+#define BRAKE_PIN 22  // 
+
+// Hardware pin for red LED on KICKR
+#define BRAKE_LED 21 //
 
 // Hardware pin for Shift Up
 #define SHIFT_UP_PIN 19
