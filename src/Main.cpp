@@ -15,6 +15,11 @@
 #include "ERG_Mode.h"
 #include "UdpAppender.h"
 #include "WebsocketAppender.h"
+#include "ESP32TimerInterrupt.h"
+
+volatile unsigned long rotationTime = 1;
+float RPM                           = 0;
+float avgRPM                        = 0;
 
 HardwareSerial stepperSerial(2);
 TMC2208Stepper driver(&SERIAL_PORT, R_SENSE);  // Hardware Serial
@@ -24,6 +29,7 @@ FastAccelStepper *stepper     = NULL;
 // to prevent stuttering
 TaskHandle_t moveStepperTask;
 TaskHandle_t maintenanceLoopTask;
+
 
 ///////////// Initialize the Config /////////////
 SS2K ss2k;
@@ -89,12 +95,13 @@ void setup() {
   pinMode(ENABLE_PIN, OUTPUT);
   pinMode(DIR_PIN, OUTPUT);   // Stepper Direction Pin
   pinMode(STEP_PIN, OUTPUT);  // Stepper Step Pin
+  pinMode(CADENCE_PIN, INPUT_PULLUP); //Added for pin cadence detection
   digitalWrite(ENABLE_PIN,
                HIGH);  // Should be called a disable Pin - High Disables FETs
   digitalWrite(DIR_PIN, LOW);
   digitalWrite(STEP_PIN, LOW);
   digitalWrite(LED_PIN, LOW);
-
+  
   ss2k.setupTMCStepperDriver();
 
   SS2K_LOG(MAIN_LOG_TAG, "Setting up cpu Tasks");
@@ -110,7 +117,6 @@ void setup() {
                           0);                    /* pin task to core */
 
   digitalWrite(LED_PIN, HIGH);
-
   startWifi();
 
   // Configure and Initialize Logger
@@ -132,6 +138,7 @@ void setup() {
   // Setup Interrups so shifters work anytime
   attachInterrupt(digitalPinToInterrupt(SHIFT_UP_PIN), ss2k.shiftUp, CHANGE);
   attachInterrupt(digitalPinToInterrupt(SHIFT_DOWN_PIN), ss2k.shiftDown, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(CADENCE_PIN), ss2k.cadenceUpdate, CHANGE);
   digitalWrite(LED_PIN, HIGH);
 
   xTaskCreatePinnedToCore(SS2K::maintenanceLoop,     /* Task function. */
@@ -145,15 +152,28 @@ void setup() {
 
 void loop() {  // Delete this task so we can make one that's more memory efficient.
   vTaskDelete(NULL);
+  
 }
 
+
 void SS2K::maintenanceLoop(void *pvParameters) {
+
+
   static int loopCounter              = 0;
   static unsigned long intervalTimer  = millis();
   static unsigned long intervalTimer2 = millis();
   static bool isScanning              = false;
 
   while (true) {
+    
+    // SS2K_LOG(MAIN_LOG_TAG, "timeOld: ", timeOld);
+   
+  
+  if (avgRPM > 0){
+    rtConfig.setSimulatedCad(RPM);
+  }
+
+    
     vTaskDelay(200 / portTICK_RATE_MS);
     if (rtConfig.getShifterPosition() > ss2k.lastShifterPosition) {
       SS2K_LOG(MAIN_LOG_TAG, "Shift UP: %l", rtConfig.getShifterPosition());
@@ -201,6 +221,9 @@ void SS2K::maintenanceLoop(void *pvParameters) {
     }
     loopCounter++;
   }
+
+
+
 }
 #endif  // UNIT_TEST
 
@@ -306,6 +329,25 @@ void IRAM_ATTR SS2K::shiftDown() {  // Handle the shift down interrupt
     }  // Probably Triggered by EMF, reset the debounce
   }
 }
+
+void IRAM_ATTR SS2K::cadenceUpdate() {  // Handle the cadenceUpdate Interrupt for getting the cadence of a digital pin
+      
+    RPM = ( 15000 / ( rotationTime * TIMER0_INTERVAL_MS ) );    
+    avgRPM = ( 2 * avgRPM + RPM) / 3;
+    rotationTime = 1;
+
+  if (rotationTime >= 1000){
+    // If idle, set RPM to 0, don't increase rotationTime
+    RPM = 0;
+    avgRPM = ( avgRPM + 3 * RPM) / 4;
+    rotationTime = 1;
+  }
+  else{
+    rotationTime++;
+  }
+  
+}
+
 
 void SS2K::resetIfShiftersHeld() {
   if ((digitalRead(SHIFT_UP_PIN) == LOW) && (digitalRead(SHIFT_DOWN_PIN) == LOW)) {

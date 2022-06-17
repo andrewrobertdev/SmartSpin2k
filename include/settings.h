@@ -9,6 +9,10 @@
 
 #include "SS2KLog.h"
 
+#define TIMER0_INTERVAL_MS        1
+#define DEBOUNCING_INTERVAL_MS    80
+
+
 // Update firmware on boot?
 #define AUTO_FIRMWARE_UPDATE false
 
@@ -88,6 +92,9 @@
 
 // Hardware pin for rocker Switch
 #define RADIO_PIN 27
+
+//Hardware pin for cadence counter
+#define CADENCE_PIN 23
 
 // Hardware pin for Shift Up
 #define SHIFT_UP_PIN 19
