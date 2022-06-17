@@ -13,6 +13,7 @@
 #define DEBOUNCING_INTERVAL_MS    80
 
 
+
 // Update firmware on boot?
 #define AUTO_FIRMWARE_UPDATE false
 
@@ -88,7 +89,7 @@
 #define MIN_WATTS 50
 
 // Default debounce delay for shifters. Increase if you have false shifts. Decrease if shifting takes too long. 
-#define DEBOUNCE_DELAY 400
+#define DEBOUNCE_DELAY 25 //400
 
 // Hardware pin for rocker Switch
 #define RADIO_PIN 27

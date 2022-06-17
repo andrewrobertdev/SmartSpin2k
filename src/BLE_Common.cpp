@@ -122,7 +122,7 @@ void BLECommunications(void *pvParameters) {
 #endif  // DEBUG_HR_TO_PWR
 
     if (!spinBLEClient.connectedPM && !hr2p && !rtConfig.getSimulateWatts() && !rtConfig.getSimulateCad()) {
-      rtConfig.setSimulatedCad(0);
+      // rtConfig.setSimulatedCad(0);
       rtConfig.setSimulatedWatts(0);
     }
     if (!spinBLEClient.connectedHR && !rtConfig.getSimulateHr()) {

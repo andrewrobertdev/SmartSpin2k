@@ -15,11 +15,14 @@
 #include "ERG_Mode.h"
 #include "UdpAppender.h"
 #include "WebsocketAppender.h"
-#include "ESP32TimerInterrupt.h"
 
-volatile unsigned long rotationTime = 1;
-float RPM                           = 0;
-float avgRPM                        = 0;
+volatile int rpmCount    = 0;
+unsigned long timeOld    = 0;
+unsigned long timeNew    = 0;
+float avgRPM             = 0;
+int count                = 0;
+float RPM                = 0;
+
 
 HardwareSerial stepperSerial(2);
 TMC2208Stepper driver(&SERIAL_PORT, R_SENSE);  // Hardware Serial
@@ -158,7 +161,7 @@ void loop() {  // Delete this task so we can make one that's more memory efficie
 
 void SS2K::maintenanceLoop(void *pvParameters) {
 
-
+  
   static int loopCounter              = 0;
   static unsigned long intervalTimer  = millis();
   static unsigned long intervalTimer2 = millis();
@@ -167,11 +170,30 @@ void SS2K::maintenanceLoop(void *pvParameters) {
   while (true) {
     
     // SS2K_LOG(MAIN_LOG_TAG, "timeOld: ", timeOld);
-   
-  
-  if (avgRPM > 0){
-    rtConfig.setSimulatedCad(RPM);
-  }
+
+    detachInterrupt(CADENCE_PIN);
+    // timeNew = millis() - timeOld;
+    RPM = 60*100/(millis() - timeOld)*rpmCount;
+    timeOld = millis();
+    rpmCount = 0;
+    
+    avgRPM = avgRPM + RPM;
+    if (count > 4){
+      avgRPM = avgRPM / count;
+      if (avgRPM == 0){
+        avgRPM = avgRPM;
+        count = 0;
+      }
+    else {
+      rtConfig.setSimulatedCad(avgRPM);
+      count = 0;
+    }
+    }
+    count++;
+
+    attachInterrupt(digitalPinToInterrupt(CADENCE_PIN), ss2k.cadenceUpdate, CHANGE);
+
+    
 
     
     vTaskDelay(200 / portTICK_RATE_MS);
@@ -331,21 +353,13 @@ void IRAM_ATTR SS2K::shiftDown() {  // Handle the shift down interrupt
 }
 
 void IRAM_ATTR SS2K::cadenceUpdate() {  // Handle the cadenceUpdate Interrupt for getting the cadence of a digital pin
-      
-    RPM = ( 15000 / ( rotationTime * TIMER0_INTERVAL_MS ) );    
-    avgRPM = ( 2 * avgRPM + RPM) / 3;
-    rotationTime = 1;
-
-  if (rotationTime >= 1000){
-    // If idle, set RPM to 0, don't increase rotationTime
-    RPM = 0;
-    avgRPM = ( avgRPM + 3 * RPM) / 4;
-    rotationTime = 1;
+  if (ss2k.deBounce() && !rtConfig.getERGMode()) {
+    if (!digitalRead(CADENCE_PIN)) { 
+      rpmCount++;
+  } else {
+      ss2k.lastDebounceTime = 0;
+    }  // Probably Triggered by EMF, reset the debounce
   }
-  else{
-    rotationTime++;
-  }
-  
 }
 
 
