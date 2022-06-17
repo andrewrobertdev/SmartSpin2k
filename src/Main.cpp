@@ -168,7 +168,8 @@ void SS2K::maintenanceLoop(void *pvParameters) {
   static bool isScanning              = false;
 
   while (true) {
-    
+    // spd = 15.4;
+
     // SS2K_LOG(MAIN_LOG_TAG, "timeOld: ", timeOld);
 
     detachInterrupt(CADENCE_PIN);
@@ -180,12 +181,14 @@ void SS2K::maintenanceLoop(void *pvParameters) {
     avgRPM = avgRPM + RPM;
     if (count > 4){
       avgRPM = avgRPM / count;
-      if (avgRPM == 0){
+      if (avgRPM == 0){ //required during testing. now redundant?
         avgRPM = avgRPM;
         count = 0;
       }
     else {
       rtConfig.setSimulatedCad(avgRPM);
+      rtConfig.setSimulatedWatts(avgRPM); //need to find a suitable algorithm!
+
       count = 0;
     }
     }
@@ -354,7 +357,7 @@ void IRAM_ATTR SS2K::shiftDown() {  // Handle the shift down interrupt
 
 void IRAM_ATTR SS2K::cadenceUpdate() {  // Handle the cadenceUpdate Interrupt for getting the cadence of a digital pin
   if (ss2k.deBounce() && !rtConfig.getERGMode()) {
-    if (!digitalRead(CADENCE_PIN)) { 
+    if (!digitalRead(CADENCE_PIN)) {   //this line is copied from above and seems to be required for debouncing correctly, but reduces accuracy of the optical sensor!
       rpmCount++;
   } else {
       ss2k.lastDebounceTime = 0;
