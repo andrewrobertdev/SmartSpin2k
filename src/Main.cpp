@@ -211,13 +211,17 @@ void SS2K::maintenanceLoop(void *pvParameters) {
     intPWM = intPWM / 2;
     intPWM = 255 - intPWM;         //KICKR MOSFET Brake on = LOW          
     if (intPWM > 255){
-      digitalWrite(BRAKE_LED, HIGH);
       intPWM = 255;
     }
     if (intPWM < 0){
-      digitalWrite(BRAKE_LED, LOW);
-      intPWM = 0;
+            intPWM = 0;
     }                 //convert to value between 0 - 255
+    if (intPWM > 240){
+      digitalWrite(BRAKE_LED, LOW);
+    }
+    else{
+      digitalWrite(BRAKE_LED, HIGH);
+    }
     ledcWrite(pwmChannel, intPWM);
     // SS2K_LOG(MAIN_LOG_TAG, "PWM Value: %d", intPWM);
     // SS2K_LOG(MAIN_LOG_TAG, "floatPWM Value: %f", floatPWM);
